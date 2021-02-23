@@ -1,0 +1,15 @@
+[package]
+name = "dating_questions_bot"
+version = "1.0.0"
+authors = ["Kirill Konchenko <konchenko.k@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+reqwest = { version = "0.10.8", features = ["json"] }
+tokio = { version = "0.2", features = ["full"] }
+serde = { version = "1.0.44", features = ["derive"] }
+serde_json = "1.0.44"
+redis = "0.19.0"
+rand = "0.8.2"
+log = "0.4.0"
+simple_logger = "1.11.0"

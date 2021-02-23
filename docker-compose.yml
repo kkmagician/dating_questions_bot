@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: build.Dockerfile
+    volumes:
+      - ./:/build/
+      - ./build_target:/build/target
+
+  release:
+    image: kkmagician/dating_questions_bot
+    build:
+      context: .
+      dockerfile: release.Dockerfile
