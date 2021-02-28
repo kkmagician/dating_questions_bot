@@ -16,7 +16,7 @@ pub struct ReportData {
 
 impl ReportData {
     pub async fn get(room_id: &String, client: &Client, ch_url: &String)
-                 -> Result<ReportData, reqwest::Error> {
+        -> Result<ReportData, reqwest::Error> {
         let res = client.post(ch_url)
             .body(ReportData::generate_request(room_id))
             .send().await?

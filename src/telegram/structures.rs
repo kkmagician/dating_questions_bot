@@ -1,5 +1,6 @@
 use crate::bot::room::*;
 use crate::bot::constants::*;
+use crate::ternary;
 use crate::telegram::helpers::*;
 use crate::telegram::messages::send_message;
 
@@ -141,12 +142,19 @@ pub struct CallbackQueryAnswer {
     text: Option<String>
 }
 
-async fn answer_callback_query(bot_token: &str, client: &Client, callback_query_id: String, idx: u8)
-                               -> Result<(), Box<dyn std::error::Error>> {
+async fn answer_callback_query(
+    bot_token: &str,
+    client: &Client,
+    callback_query_id: String,
+    idx: u8,
+    typ: u8
+) -> Result<(), Box<dyn std::error::Error>> {
     let url = create_tg_url(bot_token, TgMethods::ANSWER_CALLBACK_QUERY);
+    let pack = ternary!(typ == 1, IMPORTANCE_EMOJIS, EVALUATION_EMOJIS);
+
     let answer = CallbackQueryAnswer {
         callback_query_id,
-        text: EMOJIS.get(idx as usize).map(|x: &&str| format!("Оценка: {}", x))
+        text: pack.get(idx as usize).map(|x: &&str| format!("Оценка: {}", x))
     };
 
     client.post(&url)
@@ -169,7 +177,9 @@ impl OutgoingInlineKeyboardMessage {
     fn create_eval_keys(typ: u8, selected_key: Option<u8>)
         -> Vec<InlineKeyboardButton> {
         let selected_idx = selected_key.unwrap_or(99);
-        EMOJIS.iter()
+        let pack = ternary!(typ == 1, IMPORTANCE_EMOJIS, EVALUATION_EMOJIS);
+
+        pack.iter()
             .enumerate()
             .map(|(i, &x)| InlineKeyboardButton {
                 text: if i == selected_idx as usize {
@@ -298,8 +308,15 @@ impl CallbackData {
         }
     }
 
-    pub(crate) async fn handle_callback(&self, id: &String, user_id: i64, message_id: i32, redis: &mut redis::Connection, client: &Client, bot_token: &str)
-        -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) async fn handle_callback(
+        &self,
+        id: &String,
+        user_id: i64,
+        message_id: i32,
+        redis: &mut redis::Connection,
+        client: &Client,
+        bot_token: &str
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let context = Context::get(user_id as i32, redis)?;
 
         if context == Context::IN_ROOM || context == Context::WAITING_FOR_ANSWER {
@@ -339,7 +356,7 @@ impl CallbackData {
             }
         }
 
-        answer_callback_query(bot_token, client, id.to_string(), self.idx).await?;
+        answer_callback_query(bot_token, client, id.to_string(), self.idx, self.typ).await?;
 
         Ok(())
     }

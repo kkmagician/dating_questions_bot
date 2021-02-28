@@ -37,12 +37,16 @@ pub struct Room {
 }
 
 impl Room {
+    fn key(room_id: &String) -> String {
+        format!("room:{}", room_id)
+    }
+
     pub(crate) fn create(user_id: i32, pack: &String, redis: &mut redis::Connection)
                          -> String {
         let room_id = random_id();
 
         let _: redis::RedisResult<()> = redis.hset_multiple(
-            format!("room:{}", &room_id),
+            Room::key(&room_id),
             &[
                 ("room_id", room_id.to_string()),
                 ("creator_id", user_id.to_string()),
@@ -57,13 +61,13 @@ impl Room {
 
     pub(crate) fn enter(room_id: &String, user_id: i32, redis: &mut redis::Connection)
         -> Result<(), redis::RedisError> {
-        redis.hset(format!("room:{}", room_id), "visitor_id", user_id.to_string())?;
+        redis.hset(Room::key(room_id), "visitor_id", user_id.to_string())?;
         Ok(())
     }
 
     pub(crate) fn prepare_for_next_question(room_id: &String, redis: &mut redis::Connection)
                                             -> Result<u16, redis::RedisError> {
-        let key = format!("room:{}", room_id);
+        let key = Room::key(room_id);
         redis.hdel(
             &key,
             &[
@@ -87,7 +91,7 @@ impl Room {
         ch_url: &String
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (creator_id, visitor_id, pack): (i32, i32, String) = redis.hget(
-            format!("room:{}", room_id),
+            Room::key(room_id),
             &["creator_id", "visitor_id", "pack"]
         )?;
 
@@ -118,9 +122,13 @@ impl Room {
         Ok(())
     }
 
-    pub(crate) async fn write_data(room_id: &String, redis: &mut redis::Connection, client: &Client, ch_url: &String)
-                                   -> Result<(), Box<dyn std::error::Error>>{
-        let room: HashMap<String, String> = redis.hgetall(format!("room:{}", room_id))?;
+    pub(crate) async fn write_data(
+        room_id: &String,
+        redis: &mut redis::Connection,
+        client: &Client,
+        ch_url: &String
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let room: HashMap<String, String> = redis.hgetall(Room::key(room_id))?;
 
         let creator_id: i32 = get_parse_string_value(&room, "creator_id", 0);
         let visitor_id: i32 = get_parse_string_value(&room, "visitor_id", 0);
@@ -152,6 +160,11 @@ impl Room {
 
         client.post(ch_url).body(query).send().await?;
         Ok(())
+    }
+
+    pub(crate) fn clear(room_id: &String, redis: &mut redis::Connection)
+        -> redis::RedisResult<()> {
+        redis.del(Room::key(room_id))
     }
 }
 

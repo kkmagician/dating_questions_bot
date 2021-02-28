@@ -72,6 +72,8 @@ pub(crate) async fn send_question_messages(
             Context::reset(user_id, redis)?;
             let _: Result<(), redis::RedisError> = redis.del(format!("user:{}:room", user_id));
         }
+
+        Room::clear(room_id, redis)?
     }
 
     Ok(())
