@@ -19,7 +19,7 @@ impl Role {
 
     pub fn get(user_id: i32, redis: &mut Connection)
            -> Result<String, redis::RedisError> {
-        let role: String = redis.hget(format!("user:{}:room", user_id), "role")?;
+        let role: String = redis.hget(Room::key_user(user_id), "role")?;
         Ok(role)
     }
 
@@ -37,8 +37,12 @@ pub struct Room {
 }
 
 impl Room {
-    fn key(room_id: &String) -> String {
+    pub(crate) fn key(room_id: &String) -> String {
         format!("room:{}", room_id)
+    }
+
+    pub(crate) fn key_user(user_id: i32) -> String {
+        format!("user:{}:room", user_id)
     }
 
     pub(crate) fn create(user_id: i32, pack: &String, redis: &mut redis::Connection)
@@ -99,7 +103,7 @@ impl Room {
         Context::set_context(visitor_id, Context::IN_ROOM, redis)?;
 
         redis.hset_multiple(
-            format!("user:{}:room", creator_id),
+            Room::key_user(creator_id),
             &[
                 ("id", room_id),
                 ("role", &Role::CREATOR.to_string())
@@ -107,7 +111,7 @@ impl Room {
         )?;
 
         redis.hset_multiple(
-            format!("user:{}:room", visitor_id),
+            Room::key_user(visitor_id),
             &[
                 ("id", room_id),
                 ("role", &Role::VISITOR.to_string())
@@ -177,7 +181,7 @@ pub struct UserRoom {
 impl UserRoom {
     pub fn get(user_id: i32, redis: &mut redis::Connection)
            -> Result<UserRoom, redis::RedisError> {
-        let role: HashMap<String, String> = redis.hgetall(format!("user:{}:room", user_id))?;
+        let role: HashMap<String, String> = redis.hgetall(Room::key_user(user_id))?;
 
         Ok(UserRoom {
             id: (&role.get("id").unwrap()).to_string(),
@@ -187,7 +191,7 @@ impl UserRoom {
 
     pub(crate) fn set_ready_time(&self, redis: &mut redis::Connection)
                                  -> Result<bool, redis::RedisError> {
-        let key = format!("room:{}", self.id);
+        let key = Room::key( &self.id);
         let role_field = format!("{}_ready_at", self.role);
         let opposite_role_field = format!("{}_ready_at", Role::opposite(&self.role));
         let is_already_set: bool = redis.hexists(&key, &role_field)?;
@@ -220,7 +224,7 @@ impl Context {
         redis.del(Context::key(user_id))
     }
 
-    pub fn key(user_id: i32) -> String {
+    pub(crate) fn key(user_id: i32) -> String {
         format!("user:{}:context", user_id)
     }
 
@@ -231,5 +235,3 @@ impl Context {
     pub const IN_ROOM: &'static str = "IN_ROOM";
     pub const WAITING_FOR_RESULTS: &'static str = "WAITING_FOR_RESULTS";
 }
-
-

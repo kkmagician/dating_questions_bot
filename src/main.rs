@@ -28,9 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Started the bot");
 
-    longpoll(&token, &client, &mut redis, &ch_url).await?;
-
-    Ok(())
+    longpoll(&token, &client, &mut redis, &ch_url).await
 }
 
 async fn get_updates(bot_token: &str, client: &Client, latest_update_id: i32)
@@ -59,6 +57,122 @@ async fn get_updates(bot_token: &str, client: &Client, latest_update_id: i32)
     Ok(tg_response?)
 }
 
+async fn handle_updates(
+    update: &TgUpdate,
+    bot_token: &str,
+    client: &Client,
+    redis: &mut redis::Connection,
+    ch_url: &String,
+    url: &String
+) -> Result<(), Box<dyn std::error::Error>> {
+    let message_type = update.handle_message_type(redis)?;
+    let message = update.message.borrow();
+
+    if message.is_some() {
+        log::info!("{:?}", message.as_ref().unwrap());
+    }
+
+    let chat_id = message.as_ref().map(|x| x.from.id);
+
+    match &message_type {
+        UpdateType::Callback(chat, message, d, id) => {
+            d.handle_callback(id, *chat, *message, redis, client, bot_token).await?;
+        },
+        _ => ()
+    }
+
+    if chat_id.is_some() {
+        let user_id = chat_id.unwrap();
+
+        let response: Option<OutgoingKeyboardMessage> = match message_type {
+            UpdateType::Start => Some(OutgoingKeyboardMessage::welcome_message(user_id)),
+            UpdateType::JoinExisting => {
+                let msg = OutgoingKeyboardMessage::join_room(user_id);
+                Context::set_context(user_id, Context::INSERT_ID, redis)?;
+
+                Some(msg)
+            },
+            UpdateType::Create => {
+                let packs: Vec<String> = redis.smembers(RedisKeys::PACKS)?;
+                let msg = OutgoingKeyboardMessage::create_select_pack(user_id, packs);
+                Context::set_context(user_id, Context::SELECT_PACK, redis)?;
+
+                Some(msg)
+            }
+            UpdateType::NewRoom => {
+                let pack_opt = message.as_ref().and_then(|x| x.text.as_ref());
+
+                if pack_opt.is_some() {
+                    let pack = pack_opt.unwrap();
+                    let is_existing_pack: bool = redis.sismember(RedisKeys::PACKS, pack)?;
+                    if is_existing_pack {
+                        let room_id = Room::create(user_id, &pack, redis);
+                        let msg = OutgoingKeyboardMessage::room_id_message(user_id, &room_id);
+                        Context::set_context(user_id, Context::WAITING_FOR_PARTNER, redis)?;
+
+                        Some(msg)
+                    } else {
+                        Some(OutgoingKeyboardMessage::with_text(chat_id.unwrap(), Messages::ERROR_PACK_DOES_NOT_EXIST))
+                    }
+                } else {
+                    Some(OutgoingKeyboardMessage::with_text(chat_id.unwrap(), Messages::ERROR))
+                }
+            }
+            UpdateType::InsertId => {
+                let id_opt = message.as_ref().and_then(|x| x.text.as_ref());
+
+                if id_opt.is_some() {
+                    let id = id_opt.unwrap();
+                    let room_id = Room::key(id);
+                    let is_existing_room: bool = redis.exists(&room_id)?;
+                    let visitor_id: Option<i32> = redis.hget(&room_id, "visitor_id")?;
+                    let is_vacant_room = visitor_id.is_none() || visitor_id.map_or(false, |id| id == user_id);
+
+                    if is_existing_room && is_vacant_room {
+                        log::info!("Entering room {}, user {}", &room_id, user_id);
+
+                        Room::enter(&id, user_id, redis)?;
+                        Room::start(&id, redis, client, url, ch_url).await?;
+                        None
+                    } else {
+                        Some(OutgoingKeyboardMessage::wrong_room_id(user_id))
+                    }
+                } else {
+                    Some(OutgoingKeyboardMessage::wrong_room_id(user_id))
+                }
+            },
+            UpdateType::WaitingForOther => {
+                let user_room = UserRoom::get(user_id, redis)?;
+                if user_room.set_ready_time(redis)? {
+                    Room::write_data(&user_room.id, redis, client, ch_url).await?;
+
+                    let idx = Room::prepare_for_next_question(&user_room.id, redis)?;
+                    let users: Vec<i32> = redis.hget(Room::key(&user_room.id), &["creator_id", "visitor_id"])?;
+                    let pack: String = redis.hget(Room::key(&user_room.id), "pack")?;
+                    send_question_messages([users[0], users[1]], &pack, idx, redis, client, url, &user_room.id, ch_url).await?;
+
+                    None
+                } else {
+                    Some(OutgoingKeyboardMessage::with_text(user_id, Messages::WAITING_FOR_PARTNER_EVAL))
+                }
+            },
+            UpdateType::WaitingForResults => {
+                Some(OutgoingKeyboardMessage::with_text(user_id, Messages::WAIT_A_MOMENT))
+            },
+            UpdateType::Error => {
+                Some(OutgoingKeyboardMessage::error(user_id))
+            },
+            _ => Some(OutgoingKeyboardMessage::error(user_id))
+        };
+
+        if response.is_some() {
+            send_message(url, &response.unwrap(), client).await?;
+        }
+    }
+
+    Ok(())
+}
+
 async fn longpoll(bot_token: &str, client: &Client, redis: &mut redis::Connection, ch_url: &String)
     -> Result<(), Box<dyn std::error::Error>> {
     let mut latest_update_id: i32 = 0;
@@ -68,116 +182,22 @@ async fn longpoll(bot_token: &str, client: &Client, redis: &mut redis::Connectio
         let updates = get_updates(bot_token, client, latest_update_id).await?;
 
         for update in updates.result {
-            let message_type = update.handle_message_type(redis);
+            let upd = handle_updates(&update, bot_token, client, redis, ch_url, &url).await;
 
-            let message = update.message.borrow();
+            if upd.is_err() {
+                let user_id = &update.message.map(|m| m.from.id);
 
-            if message.is_some() {
-                log::info!("{:?}", message.as_ref().unwrap());
+                if user_id.is_some() {
+                    send_message(&url, &OutgoingKeyboardMessage::internal_error(user_id.unwrap()), client).await?;
+                }
+
+                log::error!("{:?}", upd);
             }
-
-            let chat_id = message.as_ref().map(|x| x.from.id);
 
             latest_update_id = update.update_id;
             redis.set(RedisKeys::LATEST_MESSAGE, latest_update_id)?;
-
-            match &message_type {
-                UpdateType::Callback(chat, message, d, id) => {
-                    d.handle_callback(id, *chat, *message, redis, client, bot_token).await?;
-                },
-                _ => ()
-            }
-
-            if chat_id.is_some() {
-                let user_id = chat_id.unwrap();
-
-                let response: Option<OutgoingKeyboardMessage> = match message_type {
-                    UpdateType::Start => Some(OutgoingKeyboardMessage::welcome_message(user_id)),
-                    UpdateType::JoinExisting => {
-                        let msg = OutgoingKeyboardMessage::join_room(user_id);
-                        Context::set_context(user_id, Context::INSERT_ID, redis)?;
-
-                        Some(msg)
-                    },
-                    UpdateType::Create => {
-                        let packs: Vec<String> = redis.smembers(RedisKeys::PACKS)?;
-                        let msg = OutgoingKeyboardMessage::create_select_pack(user_id, packs);
-                        Context::set_context(user_id, Context::SELECT_PACK, redis)?;
-
-                        Some(msg)
-                    }
-                    UpdateType::NewRoom => {
-                        let pack_opt = message.as_ref().and_then(|x| x.text.as_ref());
-
-                        if pack_opt.is_some() {
-                            let pack = pack_opt.unwrap();
-                            let is_existing_pack: bool = redis.sismember(RedisKeys::PACKS, pack)?;
-                            if is_existing_pack {
-                                let room_id = Room::create(user_id, &pack, redis);
-                                let msg = OutgoingKeyboardMessage::room_id_message(user_id, &room_id);
-                                Context::set_context(user_id, Context::WAITING_FOR_PARTNER, redis)?;
-
-                                Some(msg)
-                            } else {
-                                Some(OutgoingKeyboardMessage::with_text(chat_id.unwrap(), Messages::ERROR))
-                            }
-                        } else {
-                            Some(OutgoingKeyboardMessage::with_text(chat_id.unwrap(), Messages::ERROR))
-                        }
-                    }
-                    UpdateType::InsertId => {
-                        let id_opt = message.as_ref().and_then(|x| x.text.as_ref());
-
-                        if id_opt.is_some() {
-                            let id = id_opt.unwrap();
-                            let room_id = format!("room:{}", id);
-                            let is_existing_room: bool = redis.exists(&room_id)?;
-                            let is_vacant_room: bool = !redis.hexists(&room_id, "visitor_id")?;
-
-                            if is_existing_room && is_vacant_room {
-                                log::info!("Entering room {}, user {}", &room_id, user_id);
-
-                                Room::enter(&id, user_id, redis)?;
-                                Room::start(&id, redis, client, &url, ch_url).await?;
-                                None
-                            } else {
-                                Some(OutgoingKeyboardMessage::wrong_room_id(user_id))
-                            }
-                        } else {
-                            Some(OutgoingKeyboardMessage::wrong_room_id(user_id))
-                        }
-                    },
-                    UpdateType::WaitingForOther => {
-                        let user_room = UserRoom::get(user_id, redis)?;
-                        if user_room.set_ready_time(redis)? {
-                            Room::write_data(&user_room.id, redis, client, ch_url).await?;
-
-                            let idx = Room::prepare_for_next_question(&user_room.id, redis)?;
-                            let users: Vec<i32> = redis.hget(format!("room:{}", &user_room.id), &["creator_id", "visitor_id"])?;
-                            let pack: String = redis.hget(format!("room:{}", &user_room.id), "pack")?;
-                            send_question_messages([users[0], users[1]], &pack, idx, redis, client, &url, &user_room.id, ch_url).await?;
-
-                            None
-                        } else {
-                            Some(OutgoingKeyboardMessage::with_text(user_id, Messages::WAITING_FOR_PARTNER_EVAL))
-                        }
-                    },
-                    UpdateType::WaitingForResults => {
-                      Some(OutgoingKeyboardMessage::with_text(user_id, Messages::WAIT_A_MOMENT))
-                    },
-                    UpdateType::Error => {
-                        Some(OutgoingKeyboardMessage::error(user_id))
-                    },
-                    _ => Some(OutgoingKeyboardMessage::error(user_id))
-                };
-
-                if response.is_some() {
-                    send_message(&url, &response.unwrap(), client).await?;
-                }
-            }
+            log::info!("Latest update: {}", latest_update_id);
         }
-
-        log::info!("Latest update: {}", latest_update_id);
     }
 
     Ok(())
