@@ -1,4 +1,4 @@
-pub(crate) const IMPORTANCE_EMOJIS: [&str; 5] = ["0️", "✔️", "❗", "‼️", "️🔥"];
+pub(crate) const IMPORTANCE_EMOJIS: [&str; 5] = [" 0️", "✔️", "❗", "‼️", "️🔥"];
 pub(crate) const EVALUATION_EMOJIS: [&str; 5] = ["😡", "🙁", "😐", "😊", "️😀"];
 
 pub(crate) struct RedisKeys;
@@ -10,7 +10,6 @@ impl RedisKeys {
 pub struct Messages;
 impl Messages {
     pub const WELCOME: &'static str = "Привет! Рад видеть тебя.";
-    pub const ERROR: &'static str = "Ошибка, попробуй еще.";
     pub const WAITING_FOR_PARTNER: &'static str = "Ждем, пока партнер зайдет в комнату.";
     pub const WAITING_FOR_PARTNER_EVAL: &'static str = "Ожидание оценок партнера";
     pub const INSERT_ROOM_ID: &'static str = "Введи ID комнаты";
@@ -21,6 +20,10 @@ impl Messages {
     pub const WAIT_A_MOMENT: &'static str = "Подожди минутку...";
     pub const ANSWER_IMPORTANCE: &'static str = "Насколько тебе важен ответ?";
     pub const ANSWER_EVALUATION: &'static str = "Как тебе ответ партнера?";
+
+    pub const ERROR: &'static str = "Ошибка, попробуй ещё.";
+    pub const ERROR_PACK_DOES_NOT_EXIST: &'static str = "Такого набора не существует, попробуй выбрать кнопкой.";
+    pub const ERROR_INTERNAL: &'static str = "Ошибка бота, попробуй ещё раз немного позже.";
 }
 
 pub struct Keys;

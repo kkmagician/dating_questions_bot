@@ -116,6 +116,10 @@ impl OutgoingKeyboardMessage {
         OutgoingKeyboardMessage::with_text(chat_id, Messages::ERROR)
     }
 
+    pub(crate) fn internal_error(chat_id: i32) -> OutgoingKeyboardMessage {
+        OutgoingKeyboardMessage::with_text(chat_id, Messages::ERROR_INTERNAL)
+    }
+
     pub(crate) fn room_id_message(chat_id: i32, room_id: &String) -> OutgoingKeyboardMessage {
         OutgoingKeyboardMessage::with_text(
             chat_id,
@@ -372,7 +376,8 @@ pub struct TgUpdate {
 }
 
 impl TgUpdate {
-    pub(crate) fn handle_message_type(&self, redis: &mut redis::Connection) -> UpdateType {
+    pub(crate) fn handle_message_type(&self, redis: &mut redis::Connection)
+        -> Result<UpdateType, redis::RedisError> {
         let user_id = self.message.as_ref().map(|x| x.from.id);
         let message_text = self.message.as_ref().and_then(|x| x.text.as_ref());
 
@@ -387,45 +392,43 @@ impl TgUpdate {
 
             match (chat_id, message_id, data) {
                 (Some(uid), Some(cid), Some(d)) =>
-                    UpdateType::Callback(uid, cid, d, callback_query_id.to_string()),
-                _ => UpdateType::Error
+                     Ok(UpdateType::Callback(uid, cid, d, callback_query_id.to_string())),
+                _ => Ok(UpdateType::Error)
             }
         } else if self.message.as_ref()
             .and_then(|x| x.entities.as_ref())
             .map(|x|
                 x.iter().any(|y| y.typ == "bot_command")
             ) == Some(true) {
+
             if user_id.is_some() {
-                Context::reset(user_id.unwrap(), redis);
-                let _: Result<(), _> = redis.del(format!("user:{}:room", user_id.unwrap()));
+                Context::reset(user_id.unwrap(), redis)?;
+                redis.del(Room::key_user(user_id.unwrap()))?;
             }
-            UpdateType::Start
+
+            Ok(UpdateType::Start)
         } else if message_text == Some(&Keys::WELCOME[0].to_string()) {
-            UpdateType::JoinExisting
+            Ok(UpdateType::JoinExisting)
         } else if message_text == Some(&Keys::WELCOME[1].to_string()) {
-            UpdateType::Create
+            Ok(UpdateType::Create)
         } else {
             if user_id.is_some() {
-                let context = Context::get(user_id.unwrap(), redis);
-                if context.is_ok() {
-                    let context_str = context.unwrap();
-                    if context_str == Context::SELECT_PACK {
-                        UpdateType::NewRoom
-                    } else if context_str == Context::INSERT_ID {
-                        UpdateType::InsertId
-                    } else if context_str == Context::WAITING_FOR_ANSWER && message_text == Some(&Keys::READY.to_string()) {
-                        UpdateType::WaitingForOther
-                    } else if context_str == Context::WAITING_FOR_RESULTS {
-                        UpdateType::WaitingForResults
-                    } else {
-                        UpdateType::Error
-                    }
+                let context_str = Context::get(user_id.unwrap(), redis)?;
+
+                if context_str == Context::SELECT_PACK {
+                    Ok(UpdateType::NewRoom)
+                } else if context_str == Context::INSERT_ID {
+                    Ok(UpdateType::InsertId)
+                } else if context_str == Context::WAITING_FOR_ANSWER && message_text == Some(&Keys::READY.to_string()) {
+                    Ok(UpdateType::WaitingForOther)
+                } else if context_str == Context::WAITING_FOR_RESULTS {
+                    Ok(UpdateType::WaitingForResults)
                 } else {
-                    UpdateType::Error
+                    Ok(UpdateType::Error)
                 }
             }
             else {
-                UpdateType::Other
+                Ok(UpdateType::Other)
             }
         }
     }

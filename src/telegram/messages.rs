@@ -94,7 +94,7 @@ pub async fn send_message<T: Serialize + ?Sized>(url: &str, message: &T, client:
 
     res.map( |x| {
         match x {
-            SentMessageResponse{
+            SentMessageResponse {
                 ok: true,
                 result: Some(SentMessage { message_id: id }),
                 ..
