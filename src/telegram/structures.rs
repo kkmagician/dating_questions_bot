@@ -400,16 +400,11 @@ impl TgUpdate {
             .map(|x|
                 x.iter().any(|y| y.typ == "bot_command")
             ) == Some(true) {
-
-            if user_id.is_some() {
-                Context::reset(user_id.unwrap(), redis)?;
-                redis.del(Room::key_user(user_id.unwrap()))?;
-            }
-
-            Ok(UpdateType::Start)
-        } else if message_text == Some(&Keys::WELCOME[0].to_string()) {
+            // using unsafe unwrap – user id or message cannot be empty in the bot api
+            TgUpdate::handle_bot_command(user_id.unwrap(), message_text.unwrap(), redis)
+        } else if message_text == Some(&Keys::JOIN.to_string()) {
             Ok(UpdateType::JoinExisting)
-        } else if message_text == Some(&Keys::WELCOME[1].to_string()) {
+        } else if message_text == Some(&Keys::CREATE.to_string()) {
             Ok(UpdateType::Create)
         } else {
             if user_id.is_some() {
@@ -430,6 +425,23 @@ impl TgUpdate {
             else {
                 Ok(UpdateType::Other)
             }
+        }
+    }
+
+    fn handle_bot_command(
+        user_id: i32,
+        message_text: &String,
+        redis: &mut redis::Connection
+    ) -> Result<UpdateType, redis::RedisError> {
+        if message_text.starts_with("/start") {
+            Context::reset(user_id, redis)?;
+            redis.del(Room::key_user(user_id))?;
+
+            Ok(UpdateType::Start)
+        } else if message_text.starts_with("/help") {
+            Ok(UpdateType::Help)
+        } else {
+            Ok(UpdateType::UnknownCommand)
         }
     }
 }
