@@ -1,6 +1,6 @@
 [package]
 name = "dating_questions_bot"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Kirill Konchenko <konchenko.k@gmail.com>"]
 edition = "2018"
 

@@ -402,9 +402,9 @@ impl TgUpdate {
             ) == Some(true) {
             // using unsafe unwrap – user id or message cannot be empty in the bot api
             TgUpdate::handle_bot_command(user_id.unwrap(), message_text.unwrap(), redis)
-        } else if message_text == Some(&Keys::WELCOME[0].to_string()) {
+        } else if message_text == Some(&Keys::JOIN.to_string()) {
             Ok(UpdateType::JoinExisting)
-        } else if message_text == Some(&Keys::WELCOME[1].to_string()) {
+        } else if message_text == Some(&Keys::CREATE.to_string()) {
             Ok(UpdateType::Create)
         } else {
             if user_id.is_some() {
