@@ -20,10 +20,12 @@ impl Messages {
     pub const WAIT_A_MOMENT: &'static str = "Подожди минутку...";
     pub const ANSWER_IMPORTANCE: &'static str = "Насколько тебе важен ответ?";
     pub const ANSWER_EVALUATION: &'static str = "Как тебе ответ партнера?";
+    pub const HELP: &'static str = "Заготовка информации о боте.";
 
     pub const ERROR: &'static str = "Ошибка, попробуй ещё.";
     pub const ERROR_PACK_DOES_NOT_EXIST: &'static str = "Такого набора не существует, попробуй выбрать кнопкой.";
     pub const ERROR_INTERNAL: &'static str = "Ошибка бота, попробуй ещё раз немного позже.";
+    pub const ERROR_UNKNOWN_COMMAND: &'static str = "Неизвестная команда бота. Попробуй выбрать из предложенного списка.";
 }
 
 pub struct Keys;

@@ -159,6 +159,12 @@ async fn handle_updates(
             UpdateType::WaitingForResults => {
                 Some(OutgoingKeyboardMessage::with_text(user_id, Messages::WAIT_A_MOMENT))
             },
+            UpdateType::Help => {
+                Some(OutgoingKeyboardMessage::with_text(user_id, Messages::HELP))
+            },
+            UpdateType::UnknownCommand => {
+                Some(OutgoingKeyboardMessage::with_text(user_id, Messages::ERROR_UNKNOWN_COMMAND))
+            },
             UpdateType::Error => {
                 Some(OutgoingKeyboardMessage::error(user_id))
             },

@@ -7,6 +7,7 @@ pub(crate) fn create_tg_url(bot_token: &str, method: &str) -> String {
 #[derive(Debug)]
 pub enum UpdateType {
     Start,
+    Help,
     JoinExisting,
     Create,
     Callback(i64, i32, CallbackData, String),
@@ -14,8 +15,9 @@ pub enum UpdateType {
     InsertId,
     WaitingForOther,
     WaitingForResults,
+    UnknownCommand,
     Other,
-    Error
+    Error,
 }
 
 #[derive(Debug)]
