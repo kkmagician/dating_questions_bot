@@ -229,7 +229,6 @@ impl UserRoom {
         -> Result<UserRoom, redis::RedisError> {
         let role: HashMap<String, String> = redis.hgetall(Room::key_user(user_id))?;
 
-        log::info!("{:?}", role);
         Ok(UserRoom {
             id: (&role.get("id").unwrap()).to_string(),
             role: (&role.get("role").unwrap()).to_string()

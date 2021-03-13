@@ -67,7 +67,6 @@ impl Handlers {
             if room_users.is_some() {
                 let user_ids: [Option<i32>; 2] = room_users.unwrap().try_into().unwrap_or([None, None]);
 
-                log::info!("{:?}", user_ids);
                 match user_ids {
                     [Some(creator_id), Some(_)] if creator_id == user_id =>
                         Room::enter_return(user_id, &room_id, Role::CREATOR, redis, client, &url.to_string()).await,
