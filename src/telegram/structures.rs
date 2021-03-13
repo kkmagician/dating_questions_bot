@@ -108,6 +108,10 @@ impl OutgoingKeyboardMessage {
         )
     }
 
+    pub(crate) fn no_room_id_in_message(chat_id: i32) -> OutgoingKeyboardMessage {
+        OutgoingKeyboardMessage::with_text(chat_id, Messages::NO_ROOM_ID_IN_MESSAGE)
+    }
+
     pub(crate) fn wrong_room_id(chat_id: i32) -> OutgoingKeyboardMessage {
         OutgoingKeyboardMessage::with_text(chat_id, Messages::WRONG_ROOM_ID)
     }
@@ -178,7 +182,7 @@ pub struct OutgoingInlineKeyboardMessage {
 }
 
 impl OutgoingInlineKeyboardMessage {
-    fn create_eval_keys(typ: u8, selected_key: Option<u8>)
+    fn create_eval_keys(typ: u8, selected_key: Option<u8>, room_id: &String)
         -> Vec<InlineKeyboardButton> {
         let selected_idx = selected_key.unwrap_or(99);
         let pack = ternary!(typ == 1, IMPORTANCE_EMOJIS, EVALUATION_EMOJIS);
@@ -186,22 +190,17 @@ impl OutgoingInlineKeyboardMessage {
         pack.iter()
             .enumerate()
             .map(|(i, &x)| InlineKeyboardButton {
-                text: if i == selected_idx as usize {
-                    format!("({})", x)
-                } else {
-                    format!("{}", x)
-                },
+                text: ternary!(i == selected_idx as usize, format!("({})", x), format!("{}", x)),
                 callback_data: serde_json::to_string(&CallbackData {
-                    idx: i as u8,
-                    typ
+                    idx: i as u8, typ, room_id: room_id.clone()
                 }).unwrap()
             })
             .collect()
     }
 
-    pub(crate) fn with_eval_keys(chat_id: i32, text: &str, typ: u8)
+    pub(crate) fn with_eval_keys(chat_id: i32, text: &str, typ: u8, room_id: &String)
         -> OutgoingInlineKeyboardMessage {
-        let keys = OutgoingInlineKeyboardMessage::create_eval_keys(typ, None);
+        let keys = OutgoingInlineKeyboardMessage::create_eval_keys(typ, None, room_id);
 
         OutgoingInlineKeyboardMessage {
             chat_id,
@@ -261,7 +260,8 @@ impl EditedReplyInlineMarkup {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct CallbackData {
     idx: u8,
-    typ: u8
+    typ: u8,
+    room_id: String
 }
 
 impl CallbackData {
@@ -299,7 +299,7 @@ impl CallbackData {
         if (role == Role::CREATOR || role == Role::VISITOR) && value < 5 {
             let redis_field = format!("{}_{}", role, format!("{:?}", message_type).to_lowercase()); // creator_importance, ...
             let previous_has_all_keys = CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
-            redis.hset(format!("room:{}", room_id), redis_field, value)?;
+            redis.hset(Room::key(room_id), redis_field, value)?;
             let new_has_all_keys = CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
 
             if !previous_has_all_keys && new_has_all_keys {
@@ -324,13 +324,18 @@ impl CallbackData {
         let context = Context::get(user_id as i32, redis)?;
 
         if context == Context::IN_ROOM || context == Context::WAITING_FOR_ANSWER {
-            let user_room = UserRoom::get(user_id as i32, redis)?;
+            let user_role = Room::get_role_for_user(user_id as i32, &self.room_id, redis)?;
 
             let message_type = self.match_type();
-            let send_next_question_keys =
-                CallbackData::set_value_for_role(&user_room.role, &message_type, self.idx, &user_room.id, redis)?;
 
-            let inline_keyboard = vec![OutgoingInlineKeyboardMessage::create_eval_keys(self.typ, Some(self.idx))];
+            let send_next_question_keys = match user_role {
+                Some(role) => CallbackData::set_value_for_role(&role.to_string(), &message_type, self.idx, &self.room_id, redis)?,
+                _ => false
+            };
+
+            let inline_keyboard = vec![
+                OutgoingInlineKeyboardMessage::create_eval_keys(self.typ, Some(self.idx), &self.room_id)
+            ];
             let edited_keys = EditedReplyInlineMarkup {
                 chat_id: user_id,
                 message_id,

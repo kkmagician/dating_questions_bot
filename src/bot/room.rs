@@ -1,11 +1,13 @@
 use crate::tools::*;
-use crate::telegram::messages::send_question_messages;
+use crate::telegram::messages::*;
 
 use serde::Deserialize;
 use redis::{Commands, Connection};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::borrow::Borrow;
+use std::convert::TryInto;
+use crate::telegram::structures::OutgoingKeyboardMessage;
 
 pub struct Role;
 impl Role {
@@ -45,11 +47,26 @@ impl Room {
         format!("user:{}:room", user_id)
     }
 
+    pub(crate) fn room_users(room_id: &String, redis: &mut redis::Connection)
+        -> Result<Option<(Option<i32>, Option<i32>)>, redis::RedisError> {
+        let room_users: Option<Vec<Option<i32>>> = redis.hget(Room::key(room_id), &["creator_id", "visitor_id"])?;
+
+        if room_users.is_some() {
+            let res  = room_users.unwrap().try_into().unwrap_or([None, None]);
+            match res {
+                [None, None] => Ok(None),
+                [creator, visitor] => Ok(Some((creator, visitor)))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     pub(crate) fn create(user_id: i32, pack: &String, redis: &mut redis::Connection)
-                         -> String {
+        -> Result<String, redis::RedisError> {
         let room_id = random_id();
 
-        let _: redis::RedisResult<()> = redis.hset_multiple(
+        redis.hset_multiple(
             Room::key(&room_id),
             &[
                 ("room_id", room_id.to_string()),
@@ -58,9 +75,9 @@ impl Room {
                 ("created_at", current_time().to_string()),
                 ("idx", "0".to_string())
             ]
-        );
+        )?;
 
-        room_id
+        Ok(room_id)
     }
 
     pub(crate) fn enter(room_id: &String, user_id: i32, redis: &mut redis::Connection)
@@ -87,6 +104,17 @@ impl Room {
         Ok(new_idx)
     }
 
+    fn set_current_room(user_id: i32, room_id: &String, role: &str, redis: &mut redis::Connection)
+        -> Result<(), redis::RedisError> {
+        redis.hset_multiple(
+            Room::key_user(user_id),
+            &[
+                ("id", room_id),
+                ("role", &role.to_string())
+            ]
+        )
+    }
+
     pub(crate) async fn start(
         room_id: &String,
         redis: &mut redis::Connection,
@@ -102,21 +130,8 @@ impl Room {
         Context::set_context(creator_id, Context::IN_ROOM, redis)?;
         Context::set_context(visitor_id, Context::IN_ROOM, redis)?;
 
-        redis.hset_multiple(
-            Room::key_user(creator_id),
-            &[
-                ("id", room_id),
-                ("role", &Role::CREATOR.to_string())
-            ]
-        )?;
-
-        redis.hset_multiple(
-            Room::key_user(visitor_id),
-            &[
-                ("id", room_id),
-                ("role", &Role::VISITOR.to_string())
-            ]
-        )?;
+        Room::set_current_room(creator_id, room_id, Role::CREATOR, redis)?;
+        Room::set_current_room(visitor_id, room_id, Role::VISITOR, redis)?;
 
         send_question_messages(
             [creator_id, visitor_id],
@@ -124,6 +139,26 @@ impl Room {
         ).await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn enter_return(
+        user_id: i32,
+        room_id: &String,
+        role: &str,
+        redis: &mut redis::Connection,
+        client: &Client,
+        url: &String
+    ) -> Result<Option<OutgoingKeyboardMessage>, Box<dyn std::error::Error>> {
+        let repeat_question_message = QuestionMessage::get_by_room_id(room_id, redis)?;
+        Room::set_current_room(user_id, room_id, role, redis)?;
+
+        log::info!("{:?}", repeat_question_message);
+        if repeat_question_message.is_some() {
+            repeat_question_message.unwrap().send(user_id, room_id, redis, client, url).await?;
+        }
+
+        Context::set_context(user_id, Context::IN_ROOM, redis)?;
+        Ok(None)
     }
 
     pub(crate) async fn write_data(
@@ -166,6 +201,17 @@ impl Room {
         Ok(())
     }
 
+    pub(crate) fn get_role_for_user(user_id: i32, room_id: &String, redis: &mut redis::Connection)
+        -> Result<Option<&'static str>, redis::RedisError> {
+        let role = match Room::room_users(room_id, redis)? {
+            Some((Some(creator_id), _)) if user_id == creator_id => Some(Role::CREATOR),
+            Some((_, Some(visitor_id))) if user_id == visitor_id => Some(Role::VISITOR),
+            _ => None
+        };
+
+        Ok(role)
+    }
+
     pub(crate) fn clear(room_id: &String, redis: &mut redis::Connection)
         -> redis::RedisResult<()> {
         redis.del(Room::key(room_id))
@@ -180,9 +226,10 @@ pub struct UserRoom {
 
 impl UserRoom {
     pub fn get(user_id: i32, redis: &mut redis::Connection)
-           -> Result<UserRoom, redis::RedisError> {
+        -> Result<UserRoom, redis::RedisError> {
         let role: HashMap<String, String> = redis.hgetall(Room::key_user(user_id))?;
 
+        log::info!("{:?}", role);
         Ok(UserRoom {
             id: (&role.get("id").unwrap()).to_string(),
             role: (&role.get("role").unwrap()).to_string()
@@ -216,7 +263,7 @@ impl Context {
     }
 
     pub(crate) fn set_context(user_id: i32, context: &'static str, redis: &mut redis::Connection)
-                              -> redis::RedisResult<()> {
+        -> redis::RedisResult<()> {
         redis.set(Context::key(user_id), context)
     }
 

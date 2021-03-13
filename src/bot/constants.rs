@@ -16,7 +16,8 @@ impl Messages {
     pub const WAITING_FOR_PARTNER: &'static str = "Ждем, пока партнер зайдет в комнату.";
     pub const WAITING_FOR_PARTNER_EVAL: &'static str = "Ожидание оценок партнера";
     pub const INSERT_ROOM_ID: &'static str = "Введи ID комнаты";
-    pub const WRONG_ROOM_ID: &'static str = "Неверный ID комнаты, попробуй еще";
+    pub const NO_ROOM_ID_IN_MESSAGE: &'static str = "Не могу найти ID в тексте сообщения.";
+    pub const WRONG_ROOM_ID: &'static str = "Неверный ID комнаты, попробуй еще.";
     pub const CHOOSE_PACK: &'static str = "Выбери набор";
     pub const READY_FOR_NEXT: &'static str = "Скажи, когда будешь готов продолжить";
     pub const EVALUATING_RESULTS: &'static str = "Это был последний вопрос! Подожди, пока подвожу итоги...";
