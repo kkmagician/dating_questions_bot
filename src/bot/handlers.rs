@@ -1,10 +1,11 @@
 use crate::bot::constants::*;
 use crate::bot::room::*;
 use crate::telegram::structures::*;
-use crate::telegram::messages::send_question_messages;
+use crate::telegram::messages::*;
 
 use reqwest::Client;
 use redis::Commands;
+use std::convert::TryInto;
 
 pub struct Handlers;
 impl Handlers {
@@ -36,7 +37,7 @@ impl Handlers {
             let pack = pack_opt.unwrap();
             let is_existing_pack: bool = redis.sismember(RedisKeys::PACKS, pack)?;
             if is_existing_pack {
-                let room_id = Room::create(user_id, &pack, redis);
+                let room_id = Room::create(user_id, &pack, redis)?;
                 let msg = OutgoingKeyboardMessage::room_id_message(user_id, &room_id);
                 Context::set_context(user_id, Context::WAITING_FOR_PARTNER, redis)?;
 
@@ -60,23 +61,31 @@ impl Handlers {
         let id_opt = message.as_ref().and_then(|x| x.text.as_ref());
 
         if id_opt.is_some() {
-            let id = id_opt.unwrap();
-            let room_id = Room::key(id);
-            let is_existing_room: bool = redis.exists(&room_id)?;
-            let visitor_id: Option<i32> = redis.hget(&room_id, "visitor_id")?;
-            let is_vacant_room = visitor_id.is_none() || visitor_id.map_or(false, |id| id == user_id);
+            let room_id = id_opt.unwrap();
+            let room_users: Option<Vec<Option<i32>>> = redis.hget(Room::key(room_id), &["creator_id", "visitor_id"])?;
 
-            if is_existing_room && is_vacant_room {
-                log::info!("Entering room {}, user {}", &room_id, user_id);
+            if room_users.is_some() {
+                let user_ids: [Option<i32>; 2] = room_users.unwrap().try_into().unwrap_or([None, None]);
 
-                Room::enter(&id, user_id, redis)?;
-                Room::start(&id, redis, client, url, ch_url).await?;
-                Ok(None)
+                match user_ids {
+                    [Some(creator_id), Some(_)] if creator_id == user_id =>
+                        Room::enter_return(user_id, &room_id, Role::CREATOR, redis, client, &url.to_string()).await,
+                    [Some(_), Some(visitor_id)] if visitor_id == user_id =>
+                        Room::enter_return(user_id, &room_id, Role::VISITOR, redis, client, &url.to_string()).await,
+                    [_, None] => {
+                        Room::enter(room_id, user_id, redis)?;
+                        Room::start(room_id, redis, client, url, ch_url).await?;
+                        Ok(None)
+                    },
+                    _ => {
+                        Ok(None)
+                    }
+                }
             } else {
                 Ok(Some(OutgoingKeyboardMessage::wrong_room_id(user_id)))
             }
         } else {
-            Ok(Some(OutgoingKeyboardMessage::wrong_room_id(user_id)))
+            Ok(Some(OutgoingKeyboardMessage::no_room_id_in_message(user_id)))
         }
     }
 
