@@ -24,5 +24,5 @@ pub enum UpdateType {
 pub(crate) enum CallbackMessageType {
     Importance,
     Evaluation,
-    Error
+    Error,
 }

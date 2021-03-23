@@ -1,16 +1,17 @@
-use crate::telegram::structures::*;
-use crate::bot::room::*;
 use crate::bot::constants::*;
 use crate::bot::report::ReportData;
+use crate::bot::room::*;
+use crate::telegram::structures::*;
+use crate::ternary;
 
-use reqwest::Client;
 use redis::Commands;
+use reqwest::Client;
 use serde::Serialize;
 
 #[derive(Debug)]
 pub(crate) struct QuestionMessage {
     header: String,
-    message: String
+    message: String,
 }
 
 impl QuestionMessage {
@@ -18,8 +19,11 @@ impl QuestionMessage {
         format!("{}{}", self.header, self.message)
     }
 
-    fn get(pack: &String, idx: u16, redis: &mut redis::Connection)
-           -> Result<Option<QuestionMessage>, redis::RedisError> {
+    fn get(
+        pack: &String,
+        idx: u16,
+        redis: &mut redis::Connection,
+    ) -> Result<Option<QuestionMessage>, redis::RedisError> {
         let pack_message: Option<String> = redis.lindex(format!("pack:{}", pack), idx as isize)?;
 
         if pack_message.is_some() {
@@ -33,14 +37,16 @@ impl QuestionMessage {
         }
     }
 
-    pub fn get_by_room_id(room_id: &String, redis: &mut redis::Connection)
-        -> Result<Option<QuestionMessage>, redis::RedisError> {
+    pub fn get_by_room_id(
+        room_id: &String,
+        redis: &mut redis::Connection,
+    ) -> Result<Option<QuestionMessage>, redis::RedisError> {
         let pack: Option<String> = redis.hget(Room::key(room_id), "pack")?;
         let idx: Option<u16> = redis.hget(Room::key(room_id), "idx")?;
 
         match (pack, idx) {
             (Some(pack), Some(idx)) => QuestionMessage::get(&pack, idx, redis),
-            _ => Ok(None)
+            _ => Ok(None),
         }
     }
 
@@ -58,10 +64,20 @@ impl QuestionMessage {
             chat_id: user_id,
             text: self.create_text(),
             reply_markup: None,
-            parse_mode: Some("HTML".to_string())
+            parse_mode: Some("HTML".to_string()),
         };
-        let importance = OutgoingInlineKeyboardMessage::with_eval_keys(user_id, Messages::ANSWER_IMPORTANCE, 1, room_id);
-        let evaluation = OutgoingInlineKeyboardMessage::with_eval_keys(user_id, Messages::ANSWER_EVALUATION, 2, room_id);
+        let importance = OutgoingInlineKeyboardMessage::with_eval_keys(
+            user_id,
+            Messages::ANSWER_IMPORTANCE,
+            1,
+            room_id,
+        );
+        let evaluation = OutgoingInlineKeyboardMessage::with_eval_keys(
+            user_id,
+            Messages::ANSWER_EVALUATION,
+            2,
+            room_id,
+        );
 
         send_message(url, &message, client).await?;
         send_message(url, &importance, client).await?;
@@ -79,7 +95,7 @@ pub(crate) async fn send_question_messages(
     client: &Client,
     url: &str,
     room_id: &String,
-    ch_url: &String
+    ch_url: &String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let question_message = QuestionMessage::get(pack, idx, redis)?;
 
@@ -87,7 +103,9 @@ pub(crate) async fn send_question_messages(
         let question_message = question_message.unwrap();
 
         for &user_id in user_ids.iter() {
-            &question_message.send(user_id, room_id, redis, client, url).await?;
+            &question_message
+                .send(user_id, room_id, redis, client, url)
+                .await?;
         }
     } else {
         for &user_id in user_ids.iter() {
@@ -95,7 +113,7 @@ pub(crate) async fn send_question_messages(
                 chat_id: user_id,
                 text: String::from(Messages::EVALUATING_RESULTS),
                 reply_markup: None,
-                parse_mode: None
+                parse_mode: None,
             };
 
             Context::set_context(user_id, Context::WAITING_FOR_RESULTS, redis)?;
@@ -106,15 +124,19 @@ pub(crate) async fn send_question_messages(
 
         for &user_id in user_ids.iter() {
             let user_role = Role::get(user_id, redis)?;
-            let report_string = report.generate_report(&user_role);
+            let report_string = ternary!(
+                report.is_empty(),
+                Messages::ALL_QUESTIONS_NON_IMPORTANT.to_string(),
+                report.generate_report(&user_role)
+            );
             let message = OutgoingKeyboardMessage {
                 chat_id: user_id,
                 text: report_string,
                 reply_markup: Some(ReplyKeyboardMarkup {
                     keyboard: Keys::welcome(),
-                    one_time_keyboard: true
+                    one_time_keyboard: true,
                 }),
-                parse_mode: Some("HTML".to_string())
+                parse_mode: Some("HTML".to_string()),
             };
 
             send_message(url, &message, client).await?;
@@ -128,9 +150,13 @@ pub(crate) async fn send_question_messages(
     Ok(())
 }
 
-pub async fn send_message<T: Serialize + ?Sized>(url: &str, message: &T, client: &Client)
-    -> Result<i32, reqwest::Error> {
-    let res = client.post(url)
+pub async fn send_message<T: Serialize + ?Sized>(
+    url: &str,
+    message: &T,
+    client: &Client,
+) -> Result<i32, reqwest::Error> {
+    let res = client
+        .post(url)
         .json(message)
         .send()
         .await?
@@ -141,14 +167,12 @@ pub async fn send_message<T: Serialize + ?Sized>(url: &str, message: &T, client:
         log::error!("{:?}", res);
     }
 
-    res.map( |x| {
-        match x {
-            SentMessageResponse {
-                ok: true,
-                result: Some(SentMessage { message_id: id }),
-                ..
-            } => id,
-            _ => 0
-        }
-    } )
+    res.map(|x| match x {
+        SentMessageResponse {
+            ok: true,
+            result: Some(SentMessage { message_id: id }),
+            ..
+        } => id,
+        _ => 0,
+    })
 }
