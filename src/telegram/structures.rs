@@ -1,12 +1,12 @@
-use crate::bot::room::*;
 use crate::bot::constants::*;
-use crate::ternary;
+use crate::bot::room::*;
 use crate::telegram::helpers::*;
 use crate::telegram::messages::send_message;
+use crate::ternary;
 
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 use redis::Commands;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 pub struct TgMethods;
 impl TgMethods {
@@ -18,42 +18,42 @@ impl TgMethods {
 
 #[derive(Deserialize, Debug)]
 pub struct TgResult {
-    pub result: Vec<TgUpdate>
+    pub result: Vec<TgUpdate>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct TgError {
-    pub description: String
+    pub description: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct InlineQuery {
-    query: String
+    query: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CallbackQuery {
     id: String,
     message: Option<TgMessage>,
-    data: Option<String>
+    data: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct TgUser {
     pub(crate) id: i32,
     first_name: String,
-    last_name: Option<String>
+    last_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct TgChat {
-    id: i64
+    id: i64,
 }
 
 #[derive(Serialize, Debug)]
 pub struct ReplyKeyboardMarkup {
     pub(crate) keyboard: Vec<Vec<String>>,
-    pub(crate) one_time_keyboard: bool
+    pub(crate) one_time_keyboard: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -63,7 +63,7 @@ pub struct OutgoingKeyboardMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) reply_markup: Option<ReplyKeyboardMarkup>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) parse_mode: Option<String>
+    pub(crate) parse_mode: Option<String>,
 }
 
 impl OutgoingKeyboardMessage {
@@ -72,39 +72,39 @@ impl OutgoingKeyboardMessage {
             chat_id,
             text: String::from(text),
             reply_markup: None,
-            parse_mode: None
+            parse_mode: None,
         }
     }
 
-    pub(crate) fn with_keyboard(chat_id: i32, text: &str, keyboard: Vec<Vec<String>>) -> OutgoingKeyboardMessage {
+    pub(crate) fn with_keyboard(
+        chat_id: i32,
+        text: &str,
+        keyboard: Vec<Vec<String>>,
+    ) -> OutgoingKeyboardMessage {
         OutgoingKeyboardMessage {
             chat_id,
             text: String::from(text),
-            reply_markup: Some(ReplyKeyboardMarkup { keyboard, one_time_keyboard: true }),
-            parse_mode: None
+            reply_markup: Some(ReplyKeyboardMarkup {
+                keyboard,
+                one_time_keyboard: true,
+            }),
+            parse_mode: None,
         }
     }
 
     pub(crate) fn welcome_message(chat_id: i32) -> OutgoingKeyboardMessage {
-        OutgoingKeyboardMessage::with_keyboard(
-        chat_id,
-        Messages::WELCOME,
-        Keys::welcome()
-        )
+        OutgoingKeyboardMessage::with_keyboard(chat_id, Messages::WELCOME, Keys::welcome())
     }
 
     pub(crate) fn join_room(chat_id: i32) -> OutgoingKeyboardMessage {
-        OutgoingKeyboardMessage::with_text(
-            chat_id,
-            Messages::INSERT_ROOM_ID
-        )
+        OutgoingKeyboardMessage::with_text(chat_id, Messages::INSERT_ROOM_ID)
     }
 
     pub(crate) fn create_select_pack(chat_id: i32, packs: Vec<String>) -> OutgoingKeyboardMessage {
         OutgoingKeyboardMessage::with_keyboard(
             chat_id,
             Messages::CHOOSE_PACK,
-            packs.iter().map(|pack| vec![pack.to_string()]).collect()
+            packs.iter().map(|pack| vec![pack.to_string()]).collect(),
         )
     }
 
@@ -127,7 +127,7 @@ impl OutgoingKeyboardMessage {
     pub(crate) fn room_id_message(chat_id: i32, room_id: &String) -> OutgoingKeyboardMessage {
         OutgoingKeyboardMessage::with_text(
             chat_id,
-            format!("{}\nID комнаты: {}", Messages::WAITING_FOR_PARTNER, room_id).as_str()
+            format!("{}\nID комнаты: {}", Messages::WAITING_FOR_PARTNER, room_id).as_str(),
         )
     }
 }
@@ -136,18 +136,18 @@ impl OutgoingKeyboardMessage {
 pub struct SentMessageResponse {
     pub ok: bool,
     pub result: Option<SentMessage>,
-    pub description: Option<String>
+    pub description: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SentMessage {
-    pub message_id: i32
+    pub message_id: i32,
 }
 
 #[derive(Serialize, Debug)]
 pub struct CallbackQueryAnswer {
     callback_query_id: String,
-    text: Option<String>
+    text: Option<String>,
 }
 
 async fn answer_callback_query(
@@ -155,20 +155,19 @@ async fn answer_callback_query(
     client: &Client,
     callback_query_id: String,
     idx: u8,
-    typ: u8
+    typ: u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = create_tg_url(bot_token, TgMethods::ANSWER_CALLBACK_QUERY);
     let pack = ternary!(typ == 1, IMPORTANCE_EMOJIS, EVALUATION_EMOJIS);
 
     let answer = CallbackQueryAnswer {
         callback_query_id,
-        text: pack.get(idx as usize).map(|x: &&str| format!("Оценка: {}", x))
+        text: pack
+            .get(idx as usize)
+            .map(|x: &&str| format!("Оценка: {}", x)),
     };
 
-    client.post(&url)
-        .json(&answer)
-        .send()
-        .await?;
+    client.post(&url).json(&answer).send().await?;
 
     Ok(())
 }
@@ -178,41 +177,57 @@ pub struct OutgoingInlineKeyboardMessage {
     chat_id: i32,
     text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reply_markup: Option<InlineKeyboardMarkup>
+    reply_markup: Option<InlineKeyboardMarkup>,
 }
 
 impl OutgoingInlineKeyboardMessage {
-    fn create_eval_keys(typ: u8, selected_key: Option<u8>, room_id: &String)
-        -> Vec<InlineKeyboardButton> {
+    fn create_eval_keys(
+        typ: u8,
+        selected_key: Option<u8>,
+        room_id: &String,
+    ) -> Vec<InlineKeyboardButton> {
         let selected_idx = selected_key.unwrap_or(99);
         let pack = ternary!(typ == 1, IMPORTANCE_EMOJIS, EVALUATION_EMOJIS);
 
         pack.iter()
             .enumerate()
             .map(|(i, &x)| InlineKeyboardButton {
-                text: ternary!(i == selected_idx as usize, format!("({})", x), format!("{}", x)),
+                text: ternary!(
+                    i == selected_idx as usize,
+                    format!("({})", x),
+                    format!("{}", x)
+                ),
                 callback_data: serde_json::to_string(&CallbackData {
-                    idx: i as u8, typ, room_id: room_id.clone()
-                }).unwrap()
+                    idx: i as u8,
+                    typ,
+                    room_id: room_id.clone(),
+                })
+                .unwrap(),
             })
             .collect()
     }
 
-    pub(crate) fn with_eval_keys(chat_id: i32, text: &str, typ: u8, room_id: &String)
-        -> OutgoingInlineKeyboardMessage {
+    pub(crate) fn with_eval_keys(
+        chat_id: i32,
+        text: &str,
+        typ: u8,
+        room_id: &String,
+    ) -> OutgoingInlineKeyboardMessage {
         let keys = OutgoingInlineKeyboardMessage::create_eval_keys(typ, None, room_id);
 
         OutgoingInlineKeyboardMessage {
             chat_id,
             text: text.parse().unwrap(),
-            reply_markup: Some(InlineKeyboardMarkup{ inline_keyboard: vec![keys] })
+            reply_markup: Some(InlineKeyboardMarkup {
+                inline_keyboard: vec![keys],
+            }),
         }
     }
 }
 
 #[derive(Serialize, Debug)]
 pub struct InlineKeyboardMarkup {
-    inline_keyboard: Vec<Vec<InlineKeyboardButton>>
+    inline_keyboard: Vec<Vec<InlineKeyboardButton>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -222,26 +237,26 @@ pub struct TgMessage {
     chat: TgChat,
     date: i32,
     pub(crate) text: Option<String>,
-    entities: Option<Vec<MessageEntity>>
+    entities: Option<Vec<MessageEntity>>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct MessageEntity {
     #[serde(rename = "type")]
-    typ: String
+    typ: String,
 }
 
 #[derive(Serialize, Debug)]
 pub struct InlineKeyboardButton {
     text: String,
-    callback_data: String
+    callback_data: String,
 }
 
 #[derive(Serialize, Debug)]
 pub struct EditedReplyInlineMarkup {
     chat_id: i64,
     message_id: i32,
-    reply_markup: Option<InlineKeyboardMarkup>
+    reply_markup: Option<InlineKeyboardMarkup>,
 }
 
 impl EditedReplyInlineMarkup {
@@ -261,7 +276,7 @@ impl EditedReplyInlineMarkup {
 pub struct CallbackData {
     idx: u8,
     typ: u8,
-    room_id: String
+    room_id: String,
 }
 
 impl CallbackData {
@@ -269,21 +284,21 @@ impl CallbackData {
         match self.typ {
             1 => CallbackMessageType::Importance,
             2 => CallbackMessageType::Evaluation,
-            _ => CallbackMessageType::Error
+            _ => CallbackMessageType::Error,
         }
     }
 
     fn role_has_all_callback_keys(
         role: &String,
         room_id: &String,
-        redis: &mut redis::Connection
+        redis: &mut redis::Connection,
     ) -> Result<bool, redis::RedisError> {
         let set_values: Vec<i32> = redis.hget(
             format!("room:{}", room_id),
             &[
                 format!("{}_importance", role),
                 format!("{}_evaluation", role),
-            ]
+            ],
         )?;
 
         Ok(set_values.len() == 2)
@@ -294,11 +309,12 @@ impl CallbackData {
         message_type: &CallbackMessageType,
         value: u8,
         room_id: &String,
-        redis: &mut redis::Connection)
-        -> Result<bool, redis::RedisError> {
+        redis: &mut redis::Connection,
+    ) -> Result<bool, redis::RedisError> {
         if (role == Role::CREATOR || role == Role::VISITOR) && value < 5 {
             let redis_field = format!("{}_{}", role, format!("{:?}", message_type).to_lowercase()); // creator_importance, ...
-            let previous_has_all_keys = CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
+            let previous_has_all_keys =
+                CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
             redis.hset(Room::key(room_id), redis_field, value)?;
             let new_has_all_keys = CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
 
@@ -319,7 +335,7 @@ impl CallbackData {
         message_id: i32,
         redis: &mut redis::Connection,
         client: &Client,
-        bot_token: &str
+        bot_token: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let context = Context::get(user_id as i32, redis)?;
 
@@ -329,17 +345,25 @@ impl CallbackData {
             let message_type = self.match_type();
 
             let send_next_question_keys = match user_role {
-                Some(role) => CallbackData::set_value_for_role(&role.to_string(), &message_type, self.idx, &self.room_id, redis)?,
-                _ => false
+                Some(role) => CallbackData::set_value_for_role(
+                    &role.to_string(),
+                    &message_type,
+                    self.idx,
+                    &self.room_id,
+                    redis,
+                )?,
+                _ => false,
             };
 
-            let inline_keyboard = vec![
-                OutgoingInlineKeyboardMessage::create_eval_keys(self.typ, Some(self.idx), &self.room_id)
-            ];
+            let inline_keyboard = vec![OutgoingInlineKeyboardMessage::create_eval_keys(
+                self.typ,
+                Some(self.idx),
+                &self.room_id,
+            )];
             let edited_keys = EditedReplyInlineMarkup {
                 chat_id: user_id,
                 message_id,
-                reply_markup: Some(InlineKeyboardMarkup { inline_keyboard })
+                reply_markup: Some(InlineKeyboardMarkup { inline_keyboard }),
             };
 
             edited_keys.edit(bot_token, client).await?;
@@ -352,16 +376,17 @@ impl CallbackData {
                     text: String::from(Messages::READY_FOR_NEXT),
                     reply_markup: Some(ReplyKeyboardMarkup {
                         keyboard: vec![vec![Keys::READY.to_string()]],
-                        one_time_keyboard: false
+                        one_time_keyboard: false,
                     }),
-                    parse_mode: None
+                    parse_mode: None,
                 };
 
                 send_message(
                     &create_tg_url(bot_token, TgMethods::SEND_MESSAGE),
                     &is_ready_for_next_msg,
-                    client
-                ).await?;
+                    client,
+                )
+                .await?;
             }
         }
 
@@ -377,34 +402,45 @@ pub struct TgUpdate {
     pub(crate) message: Option<TgMessage>,
     edited_message: Option<TgMessage>,
     inline_query: Option<InlineQuery>,
-    callback_query: Option<CallbackQuery>
+    callback_query: Option<CallbackQuery>,
 }
 
 impl TgUpdate {
-    pub(crate) fn handle_message_type(&self, redis: &mut redis::Connection)
-        -> Result<UpdateType, redis::RedisError> {
+    pub(crate) fn handle_message_type(
+        &self,
+        redis: &mut redis::Connection,
+    ) -> Result<UpdateType, redis::RedisError> {
         let user_id = self.message.as_ref().map(|x| x.from.id);
         let message_text = self.message.as_ref().and_then(|x| x.text.as_ref());
 
         if self.callback_query.is_some() {
             let query = self.callback_query.as_ref().unwrap();
             let callback_query_id = &query.id;
-            let data = query.data.as_ref().and_then(|x| serde_json::from_str::<CallbackData>(&x).ok());
+            let data = query
+                .data
+                .as_ref()
+                .and_then(|x| serde_json::from_str::<CallbackData>(&x).ok());
             let message_id = query.message.as_ref().map(|x| x.message_id);
             let chat_id = query.message.as_ref().map(|x| x.chat.id);
 
             log::info!("{:?}, {:?}, {:?}", chat_id, message_id, data);
 
             match (chat_id, message_id, data) {
-                (Some(uid), Some(cid), Some(d)) =>
-                     Ok(UpdateType::Callback(uid, cid, d, callback_query_id.to_string())),
-                _ => Ok(UpdateType::Error)
+                (Some(uid), Some(cid), Some(d)) => Ok(UpdateType::Callback(
+                    uid,
+                    cid,
+                    d,
+                    callback_query_id.to_string(),
+                )),
+                _ => Ok(UpdateType::Error),
             }
-        } else if self.message.as_ref()
+        } else if self
+            .message
+            .as_ref()
             .and_then(|x| x.entities.as_ref())
-            .map(|x|
-                x.iter().any(|y| y.typ == "bot_command")
-            ) == Some(true) {
+            .map(|x| x.iter().any(|y| y.typ == "bot_command"))
+            == Some(true)
+        {
             // using unsafe unwrap – user id or message cannot be empty in the bot api
             TgUpdate::handle_bot_command(user_id.unwrap(), message_text.unwrap(), redis)
         } else if message_text == Some(&Keys::JOIN.to_string()) {
@@ -419,15 +455,16 @@ impl TgUpdate {
                     Ok(UpdateType::NewRoom)
                 } else if context_str == Context::INSERT_ID {
                     Ok(UpdateType::InsertId)
-                } else if context_str == Context::WAITING_FOR_ANSWER && message_text == Some(&Keys::READY.to_string()) {
+                } else if context_str == Context::WAITING_FOR_ANSWER
+                    && message_text == Some(&Keys::READY.to_string())
+                {
                     Ok(UpdateType::WaitingForOther)
                 } else if context_str == Context::WAITING_FOR_RESULTS {
                     Ok(UpdateType::WaitingForResults)
                 } else {
                     Ok(UpdateType::Error)
                 }
-            }
-            else {
+            } else {
                 Ok(UpdateType::Other)
             }
         }
@@ -436,7 +473,7 @@ impl TgUpdate {
     fn handle_bot_command(
         user_id: i32,
         message_text: &String,
-        redis: &mut redis::Connection
+        redis: &mut redis::Connection,
     ) -> Result<UpdateType, redis::RedisError> {
         if message_text.starts_with("/start") {
             Context::reset(user_id, redis)?;

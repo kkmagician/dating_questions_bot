@@ -1,10 +1,10 @@
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 
 pub fn read_key_env(key: &str) -> Option<String> {
     env::var_os(key).and_then(|v| v.into_string().ok())
@@ -13,16 +13,27 @@ pub fn read_key_env(key: &str) -> Option<String> {
 #[macro_export]
 macro_rules! ternary {
     ($c:expr, $v:expr, $v1:expr) => {
-        if $c {$v} else {$v1}
+        if $c {
+            $v
+        } else {
+            $v1
+        }
     };
 }
 
-pub fn get_parse_string_value<T: FromStr>(hm: &HashMap<String, String>, key: &str, default: T) -> T {
+pub fn get_parse_string_value<T: FromStr>(
+    hm: &HashMap<String, String>,
+    key: &str,
+    default: T,
+) -> T {
     hm.get(key).and_then(|x| x.parse().ok()).unwrap_or(default)
 }
 
 pub fn current_time() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 pub fn random_id() -> String {
