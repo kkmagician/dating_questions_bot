@@ -267,7 +267,7 @@ impl Room {
         room_id: &String,
         redis: &mut redis::Connection,
     ) -> redis::RedisResult<()> {
-        let key_user = redis.del(Room::key_user_str(creator_id))?;
+        redis.del(Room::key_user_str(creator_id))?;
         redis.del(Room::key_user_str(visitor_id))?;
         Context::reset(creator_id, redis)?;
         Context::reset(visitor_id, redis)?;
