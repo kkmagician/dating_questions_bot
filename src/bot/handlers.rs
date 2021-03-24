@@ -72,8 +72,9 @@ impl Handlers {
 
         if id_opt.is_some() {
             let room_id = id_opt.unwrap();
+            let room_key = Room::key(room_id, redis)?;
             let room_users: Option<Vec<Option<i32>>> =
-                redis.hget(Room::key(room_id), &["creator_id", "visitor_id"])?;
+                redis.hget(room_key, &["creator_id", "visitor_id"])?;
 
             if room_users.is_some() {
                 let user_ids: [Option<i32>; 2] =
@@ -131,9 +132,9 @@ impl Handlers {
             Room::write_data(&user_room.id, redis, client, ch_url).await?;
 
             let idx = Room::prepare_for_next_question(&user_room.id, redis)?;
-            let users: Vec<i32> =
-                redis.hget(Room::key(&user_room.id), &["creator_id", "visitor_id"])?;
-            let pack: String = redis.hget(Room::key(&user_room.id), "pack")?;
+            let room_key = Room::key(&user_room.id, redis)?;
+            let users: Vec<i32> = redis.hget(&room_key, &["creator_id", "visitor_id"])?;
+            let pack: String = redis.hget(&room_key, "pack")?;
             send_question_messages(
                 [users[0], users[1]],
                 &pack,

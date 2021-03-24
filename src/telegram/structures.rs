@@ -315,7 +315,10 @@ impl CallbackData {
             let redis_field = format!("{}_{}", role, format!("{:?}", message_type).to_lowercase()); // creator_importance, ...
             let previous_has_all_keys =
                 CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
-            redis.hset(Room::key(room_id), redis_field, value)?;
+            let room_key = Room::key(room_id, redis)?;
+
+            redis.hset(room_key, redis_field, value)?;
+
             let new_has_all_keys = CallbackData::role_has_all_callback_keys(role, room_id, redis)?;
 
             if !previous_has_all_keys && new_has_all_keys {
@@ -477,7 +480,8 @@ impl TgUpdate {
     ) -> Result<UpdateType, redis::RedisError> {
         if message_text.starts_with("/start") {
             Context::reset(user_id, redis)?;
-            redis.del(Room::key_user(user_id))?;
+            let room_key = Room::key_user(user_id, redis)?;
+            redis.del(room_key)?;
 
             Ok(UpdateType::Start)
         } else if message_text.starts_with("/help") {

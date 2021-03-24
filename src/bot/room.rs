@@ -20,7 +20,8 @@ impl Role {
     }
 
     pub fn get(user_id: i32, redis: &mut Connection) -> Result<String, redis::RedisError> {
-        let role: String = redis.hget(Room::key_user(user_id), "role")?;
+        let user_key = Room::key_user(user_id, redis)?;
+        let role: String = redis.hget(user_key, "role")?;
         Ok(role)
     }
 
@@ -38,20 +39,41 @@ pub struct Room {
 }
 
 impl Room {
-    pub(crate) fn key(room_id: &String) -> String {
+    fn key_str(room_id: &String) -> String {
         format!("room:{}", room_id)
     }
 
-    pub(crate) fn key_user(user_id: i32) -> String {
+    fn key_user_str(user_id: i32) -> String {
         format!("user:{}:room", user_id)
+    }
+
+    pub(crate) fn key(
+        room_id: &String,
+        redis: &mut redis::Connection,
+    ) -> redis::RedisResult<String> {
+        let k = Room::key_str(room_id);
+        redis.expire(&k, 2592000)?;
+
+        Ok(k)
+    }
+
+    pub(crate) fn key_user(
+        user_id: i32,
+        redis: &mut redis::Connection,
+    ) -> redis::RedisResult<String> {
+        let k = Room::key_user_str(user_id);
+        redis.expire(&k, 2592000)?;
+
+        Ok(k)
     }
 
     pub(crate) fn room_users(
         room_id: &String,
         redis: &mut redis::Connection,
     ) -> Result<Option<(Option<i32>, Option<i32>)>, redis::RedisError> {
+        let room_key = Room::key(room_id, redis)?;
         let room_users: Option<Vec<Option<i32>>> =
-            redis.hget(Room::key(room_id), &["creator_id", "visitor_id"])?;
+            redis.hget(room_key, &["creator_id", "visitor_id"])?;
 
         if room_users.is_some() {
             let res = room_users.unwrap().try_into().unwrap_or([None, None]);
@@ -70,9 +92,10 @@ impl Room {
         redis: &mut redis::Connection,
     ) -> Result<String, redis::RedisError> {
         let room_id = random_id();
+        let room_key = Room::key(&room_id, redis)?;
 
         redis.hset_multiple(
-            Room::key(&room_id),
+            room_key,
             &[
                 ("room_id", room_id.to_string()),
                 ("creator_id", user_id.to_string()),
@@ -90,7 +113,9 @@ impl Room {
         user_id: i32,
         redis: &mut redis::Connection,
     ) -> Result<(), redis::RedisError> {
-        redis.hset(Room::key(room_id), "visitor_id", user_id.to_string())?;
+        let room_key = Room::key(room_id, redis)?;
+        redis.hset(room_key, "visitor_id", user_id.to_string())?;
+
         Ok(())
     }
 
@@ -98,7 +123,7 @@ impl Room {
         room_id: &String,
         redis: &mut redis::Connection,
     ) -> Result<u16, redis::RedisError> {
-        let key = Room::key(room_id);
+        let key = Room::key(room_id, redis)?;
         redis.hdel(
             &key,
             &[
@@ -120,10 +145,8 @@ impl Room {
         role: &str,
         redis: &mut redis::Connection,
     ) -> Result<(), redis::RedisError> {
-        redis.hset_multiple(
-            Room::key_user(user_id),
-            &[("id", room_id), ("role", &role.to_string())],
-        )
+        let user_key = Room::key_user(user_id, redis)?;
+        redis.hset_multiple(user_key, &[("id", room_id), ("role", &role.to_string())])
     }
 
     pub(crate) async fn start(
@@ -133,8 +156,9 @@ impl Room {
         url: &str,
         ch_url: &String,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let room_key = Room::key(room_id, redis)?;
         let (creator_id, visitor_id, pack): (i32, i32, String) =
-            redis.hget(Room::key(room_id), &["creator_id", "visitor_id", "pack"])?;
+            redis.hget(room_key, &["creator_id", "visitor_id", "pack"])?;
 
         Context::set_context(creator_id, Context::IN_ROOM, redis)?;
         Context::set_context(visitor_id, Context::IN_ROOM, redis)?;
@@ -186,7 +210,8 @@ impl Room {
         client: &Client,
         ch_url: &String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let room: HashMap<String, String> = redis.hgetall(Room::key(room_id))?;
+        let room_key = Room::key(room_id, redis)?;
+        let room: HashMap<String, String> = redis.hgetall(room_key)?;
 
         let creator_id: i32 = get_parse_string_value(&room, "creator_id", 0);
         let visitor_id: i32 = get_parse_string_value(&room, "visitor_id", 0);
@@ -236,8 +261,17 @@ impl Room {
         Ok(role)
     }
 
-    pub(crate) fn clear(room_id: &String, redis: &mut redis::Connection) -> redis::RedisResult<()> {
-        redis.del(Room::key(room_id))
+    pub(crate) fn clear(
+        creator_id: i32,
+        visitor_id: i32,
+        room_id: &String,
+        redis: &mut redis::Connection,
+    ) -> redis::RedisResult<()> {
+        redis.del(Room::key_user_str(creator_id))?;
+        redis.del(Room::key_user_str(visitor_id))?;
+        Context::reset(creator_id, redis)?;
+        Context::reset(visitor_id, redis)?;
+        redis.del(Room::key_str(room_id))
     }
 }
 
@@ -249,7 +283,8 @@ pub struct UserRoom {
 
 impl UserRoom {
     pub fn get(user_id: i32, redis: &mut redis::Connection) -> Result<UserRoom, redis::RedisError> {
-        let role: HashMap<String, String> = redis.hgetall(Room::key_user(user_id))?;
+        let user_key = Room::key_user(user_id, redis)?;
+        let role: HashMap<String, String> = redis.hgetall(user_key)?;
 
         Ok(UserRoom {
             id: (&role.get("id").unwrap()).to_string(),
@@ -261,7 +296,7 @@ impl UserRoom {
         &self,
         redis: &mut redis::Connection,
     ) -> Result<bool, redis::RedisError> {
-        let key = Room::key(&self.id);
+        let key = Room::key(&self.id, redis)?;
         let role_field = format!("{}_ready_at", self.role);
         let opposite_role_field = format!("{}_ready_at", Role::opposite(&self.role));
         let is_already_set: bool = redis.hexists(&key, &role_field)?;
