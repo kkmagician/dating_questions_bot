@@ -41,8 +41,9 @@ impl QuestionMessage {
         room_id: &String,
         redis: &mut redis::Connection,
     ) -> Result<Option<QuestionMessage>, redis::RedisError> {
-        let pack: Option<String> = redis.hget(Room::key(room_id), "pack")?;
-        let idx: Option<u16> = redis.hget(Room::key(room_id), "idx")?;
+        let room_key = Room::key(room_id, redis)?;
+        let pack: Option<String> = redis.hget(&room_key, "pack")?;
+        let idx: Option<u16> = redis.hget(&room_key, "idx")?;
 
         match (pack, idx) {
             (Some(pack), Some(idx)) => QuestionMessage::get(&pack, idx, redis),
@@ -144,7 +145,7 @@ pub(crate) async fn send_question_messages(
             let _: Result<(), redis::RedisError> = redis.del(format!("user:{}:room", user_id));
         }
 
-        Room::clear(room_id, redis)?
+        Room::clear(user_ids[0], user_ids[1], room_id, redis)?
     }
 
     Ok(())
